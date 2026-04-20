@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Voice2Text 本地转写</title>
+  <style>
+    :root {
+      --bg: #f3f6f2;
+      --card: #ffffff;
+      --line: #d4dfd2;
+      --text: #30423a;
+      --muted: #6d7f75;
+      --main: #5f9a74;
+      --main-soft: #e7f3eb;
+      --ok: #3b8b5a;
+      --warn: #d18739;
+      --error: #c45252;
+      --shadow: 0 16px 32px rgba(48, 66, 58, 0.1);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 0 0, #e6efe4 0%, transparent 38%),
+        radial-gradient(circle at 100% 100%, #e1ede8 0%, transparent 40%),
+        var(--bg);
+      padding: 30px 16px;
+    }
+
+    .app {
+      width: min(900px, 100%);
+      margin: 0 auto;
+      display: grid;
+      gap: 18px;
+    }
+
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      box-shadow: var(--shadow);
+      padding: 22px;
+    }
+
+    .panel h2 {
+      margin: 0 0 12px;
+      font-size: 20px;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+    }
+
+    .dropzone {
+      border: 2px dashed #b8ccb8;
+      border-radius: 16px;
+      background: linear-gradient(180deg, #f9fcf8 0%, #f4f8f2 100%);
+      padding: 28px 20px;
+      text-align: center;
+      transition: border-color 0.28s ease, transform 0.28s ease, box-shadow 0.28s ease;
+    }
+
+    .dropzone.dragging {
+      border-color: var(--main);
+      transform: translateY(-2px);
+      box-shadow: 0 12px 28px rgba(95, 154, 116, 0.2);
+    }
+
+    .dropzone p {
+      margin: 0;
+      color: var(--muted);
+    }
+
+    .dropzone p + p {
+      margin-top: 10px;
+      font-size: 14px;
+    }
+
+    .btn-row {
+      margin-top: 16px;
+      display: flex;
+      justify-content: center;
+    }
+
+    .btn {
+      border: 0;
+      border-radius: 999px;
+      padding: 10px 22px;
+      color: #fff;
+      font-size: 15px;
+      background: linear-gradient(135deg, #6ba680 0%, #558e69 100%);
+      box-shadow: 0 8px 18px rgba(69, 116, 84, 0.28);
+      cursor: pointer;
+      transition: transform 0.22s ease, box-shadow 0.22s ease, filter 0.22s ease;
+    }
+
+    .btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 22px rgba(69, 116, 84, 0.35);
+      filter: brightness(1.03);
+    }
+
+    .btn:active {
+      transform: translateY(0);
+    }
+
+    .status-card {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      border-radius: 14px;
+      padding: 14px 16px;
+      border: 1px solid var(--line);
+      background: #fafcf9;
+    }
+
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      background: var(--muted);
+      box-shadow: 0 0 0 rgba(95, 154, 116, 0.5);
+      animation: pulse 1.5s infinite;
+      flex-shrink: 0;
+    }
+
+    .status-card.uploading .status-dot,
+    .status-card.processing .status-dot {
+      background: var(--warn);
+      box-shadow: 0 0 0 0 rgba(209, 135, 57, 0.45);
+    }
+
+    .status-card.done .status-dot {
+      background: var(--ok);
+      box-shadow: 0 0 0 0 rgba(59, 139, 90, 0.45);
+    }
+
+    .status-card.error .status-dot {
+      background: var(--error);
+      box-shadow: 0 0 0 0 rgba(196, 82, 82, 0.45);
+    }
+
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 0 rgba(95, 154, 116, 0.45); }
+      70% { box-shadow: 0 0 0 12px rgba(95, 154, 116, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(95, 154, 116, 0); }
+    }
+
+    #statusText {
+      margin: 0;
+      font-size: 15px;
+    }
+
+    .log-list,
+    .file-list {
+      list-style: none;
+      margin: 12px 0 0;
+      padding: 0;
+      display: grid;
+      gap: 10px;
+      max-height: 220px;
+      overflow: auto;
+    }
+
+    .log-item {
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid #e6eee6;
+      background: #fbfdfb;
+      font-size: 13px;
+      color: #61726a;
+    }
+
+    .log-time {
+      color: #93a49a;
+      margin-right: 8px;
+    }
+
+    .file-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      border: 1px solid #e2ebe3;
+      background: var(--main-soft);
+      border-radius: 12px;
+      padding: 12px 14px;
+    }
+
+    .file-main {
+      min-width: 0;
+    }
+
+    .file-name {
+      margin: 0;
+      font-size: 14px;
+      color: #2f4038;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .file-meta {
+      margin: 4px 0 0;
+      font-size: 12px;
+      color: #788b81;
+    }
+
+    .download-link {
+      text-decoration: none;
+      color: #fff;
+      background: #5f9a74;
+      border-radius: 999px;
+      padding: 8px 14px;
+      font-size: 13px;
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+      box-shadow: 0 6px 14px rgba(75, 119, 90, 0.28);
+      flex-shrink: 0;
+    }
+
+    .download-link:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 10px 18px rgba(75, 119, 90, 0.35);
+    }
+
+    .empty {
+      color: #7e8f85;
+      font-size: 14px;
+      margin: 8px 0 0;
+    }
+
+    @media (max-width: 640px) {
+      .panel {
+        padding: 18px;
+      }
+
+      .file-item {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <section class="panel">
+      <h2>导入音频</h2>
+      <div class="dropzone" id="dropzone">
+        <p>把音频文件拖到这里，或点击按钮选择本地文件</p>
+        <div class="btn-row">
+          <button class="btn" id="pickBtn" type="button">导入文件</button>
+        </div>
+        <p>支持拖拽和手动导入，处理在本地网页服务中完成</p>
+        <input id="fileInput" type="file" accept="audio/*,.m4a,.mp3,.wav,.aac,.flac,.ogg,.wma,.mp4,.mov" hidden>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>状态提示</h2>
+      <div class="status-card idle" id="statusCard">
+        <span class="status-dot"></span>
+        <p id="statusText">等待导入文件</p>
+      </div>
+      <ul class="log-list" id="statusLog"></ul>
+    </section>
+
+    <section class="panel">
+      <h2>生成文件</h2>
+      <ul class="file-list" id="fileList"></ul>
+      <p class="empty" id="fileEmpty">还没有生成文件</p>
+    </section>
+  </main>
+
+  <script>
+    const dropzone = document.getElementById("dropzone");
+    const pickBtn = document.getElementById("pickBtn");
+    const fileInput = document.getElementById("fileInput");
+    const statusCard = document.getElementById("statusCard");
+    const statusText = document.getElementById("statusText");
+    const statusLog = document.getElementById("statusLog");
+    const fileList = document.getElementById("fileList");
+    const fileEmpty = document.getElementById("fileEmpty");
+
+    const state = {
+      taskId: null,
+      pollTimer: null,
+    };
+
+    function setStatus(phase, message) {
+      statusCard.className = `status-card ${phase || "idle"}`;
+      statusText.textContent = message || "等待导入文件";
+    }
+
+    function renderLogs(logs) {
+      statusLog.innerHTML = "";
+      const latest = (logs || []).slice(-10).reverse();
+      for (const item of latest) {
+        const li = document.createElement("li");
+        li.className = "log-item";
+        li.innerHTML = `<span class="log-time">[${item.time}]</span>${item.message}`;
+        statusLog.appendChild(li);
+      }
+    }
+
+    function humanSize(size) {
+      if (size < 1024) return `${size} B`;
+      if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+      return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+    }
+
+    function renderFiles(files) {
+      fileList.innerHTML = "";
+      if (!files.length) {
+        fileEmpty.style.display = "block";
+        return;
+      }
+      fileEmpty.style.display = "none";
+      for (const file of files) {
+        const li = document.createElement("li");
+        li.className = "file-item";
+        li.innerHTML = `
+          <div class="file-main">
+            <p class="file-name">${file.name}</p>
+            <p class="file-meta">${file.updated_at} · ${humanSize(file.size)}</p>
+          </div>
+          <a class="download-link" href="${file.download_url}" download>下载</a>
+        `;
+        fileList.appendChild(li);
+      }
+    }
+
+    async function refreshFiles() {
+      const resp = await fetch("/api/files");
+      const data = await resp.json();
+      renderFiles(data.files || []);
+    }
+
+    async function pollTask() {
+      if (!state.taskId) return;
+      const resp = await fetch(`/api/task/${state.taskId}`);
+      if (!resp.ok) {
+        clearInterval(state.pollTimer);
+        state.pollTimer = null;
+        setStatus("error", "任务状态获取失败");
+        return;
+      }
+      const task = await resp.json();
+      setStatus(task.phase, task.message);
+      renderLogs(task.logs || []);
+      if (task.status === "done" || task.status === "error") {
+        clearInterval(state.pollTimer);
+        state.pollTimer = null;
+        await refreshFiles();
+      }
+    }
+
+    async function uploadFile(file) {
+      setStatus("uploading", `已选择文件：${file.name}`);
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("language", "autodialect");
+      formData.append("timeout", "600");
+
+      const resp = await fetch("/api/transcribe", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ error: "上传失败" }));
+        setStatus("error", err.error || "上传失败");
+        return;
+      }
+
+      const data = await resp.json();
+      state.taskId = data.task_id;
+      if (state.pollTimer) clearInterval(state.pollTimer);
+      await pollTask();
+      state.pollTimer = setInterval(pollTask, 2000);
+    }
+
+    pickBtn.addEventListener("click", () => fileInput.click());
+    fileInput.addEventListener("change", (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (file) uploadFile(file);
+      fileInput.value = "";
+    });
+
+    ["dragenter", "dragover"].forEach((eventName) => {
+      dropzone.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        dropzone.classList.add("dragging");
+      });
+    });
+
+    ["dragleave", "drop"].forEach((eventName) => {
+      dropzone.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        dropzone.classList.remove("dragging");
+      });
+    });
+
+    dropzone.addEventListener("drop", (e) => {
+      const file = e.dataTransfer.files && e.dataTransfer.files[0];
+      if (file) uploadFile(file);
+    });
+
+    refreshFiles().catch(() => {
+      setStatus("error", "文件列表加载失败");
+    });
+  </script>
+</body>
+</html>
