@@ -7,7 +7,6 @@ import base64
 import hashlib
 import hmac
 import json
-import os
 import random
 import string
 import time
@@ -20,9 +19,9 @@ from threading import Lock, Thread
 import requests
 from flask import Flask, jsonify, render_template, request, send_from_directory
 
-APPID = os.getenv("XF_APPID", "").strip()
-API_SECRET = os.getenv("XF_API_SECRET", "").strip()
-API_KEY = os.getenv("XF_API_KEY", "").strip()
+APPID = "b09eeeaa"
+API_SECRET = "Mjg5ZWFlZDhkYWU0ZjA0YzU1MTRlMTRk"
+API_KEY = "35d99b34b1f1ff342c44d9242d7c4f77"
 BASE_URL = "https://office-api-ist-dx.iflyaisol.com"
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -37,18 +36,6 @@ TASKS: dict[str, dict] = {}
 TASK_LOCK = Lock()
 
 
-def _validate_api_config() -> None:
-    missing = []
-    if not APPID:
-        missing.append("XF_APPID")
-    if not API_KEY:
-        missing.append("XF_API_KEY")
-    if not API_SECRET:
-        missing.append("XF_API_SECRET")
-    if missing:
-        raise RuntimeError(f"缺少环境变量: {', '.join(missing)}")
-
-
 def get_datetime_str() -> str:
     tz = timezone(timedelta(hours=8))
     return datetime.now(tz).strftime("%Y-%m-%dT%H:%M:%S+0800")
@@ -59,10 +46,14 @@ def random_string(length: int = 16) -> str:
 
 
 def generate_signature(params: dict, secret_key: str) -> str:
-    sorted_params = sorted(params.items())
+    signing_items = (
+        (str(k), str(v))
+        for k, v in sorted(params.items())
+        if k != "signature" and v is not None and str(v) != ""
+    )
     base_string = "&".join(
-        f"{urllib.parse.quote(str(k), safe='')}={urllib.parse.quote(str(v), safe='')}"
-        for k, v in sorted_params
+        f"{urllib.parse.quote_plus(k, safe='')}={urllib.parse.quote_plus(v, safe='')}"
+        for k, v in signing_items
     )
     sig = hmac.new(
         secret_key.encode("utf-8"),
@@ -72,8 +63,7 @@ def generate_signature(params: dict, secret_key: str) -> str:
     return base64.b64encode(sig).decode("utf-8")
 
 
-def upload_audio(file_path: str, language: str = "autodialect") -> str:
-    _validate_api_config()
+def upload_audio(file_path: str, language: str = "autodialect") -> tuple[str, str]:
     fp = Path(file_path)
     file_size = fp.stat().st_size
     sig_random = random_string()
@@ -108,7 +98,7 @@ def upload_audio(file_path: str, language: str = "autodialect") -> str:
     if str(result.get("code")) != "000000":
         raise RuntimeError(f"上传失败: {result}")
 
-    return result["content"]["orderId"]
+    return result["content"]["orderId"], sig_random
 
 
 def result_to_markdown(content: dict) -> str:
@@ -203,14 +193,13 @@ def _set_error(task_id: str, err: str) -> None:
     _append_log(task_id, f"任务失败：{err}", status="error", phase="error")
 
 
-def poll_result_with_status(order_id: str, max_wait: int, task_id: str) -> dict:
-    _validate_api_config()
+def poll_result_with_status(order_id: str, signature_random: str, max_wait: int, task_id: str) -> dict:
     start = time.time()
     while time.time() - start < max_wait:
         params = {
             "accessKeyId": API_KEY,
             "dateTime": get_datetime_str(),
-            "signatureRandom": uuid.uuid4().hex[:16],
+            "signatureRandom": signature_random,
             "orderId": order_id,
             "resultType": "transfer",
         }
@@ -257,10 +246,10 @@ def poll_result_with_status(order_id: str, max_wait: int, task_id: str) -> dict:
 def _process_task(task_id: str, audio_path: Path, language: str, timeout: int) -> None:
     try:
         _append_log(task_id, "正在上传文件到转写服务...", phase="uploading")
-        order_id = upload_audio(str(audio_path), language=language)
+        order_id, signature_random = upload_audio(str(audio_path), language=language)
         _append_log(task_id, f"上传完成（orderId: {order_id}），开始转写...", phase="processing")
 
-        content = poll_result_with_status(order_id, timeout, task_id)
+        content = poll_result_with_status(order_id, signature_random, timeout, task_id)
         markdown = result_to_markdown(content)
 
         base_name = audio_path.name
